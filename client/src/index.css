@@ -20,7 +20,7 @@ body {
   min-width: 320px;
   min-height: 100vh;
   background: #000;
-  background-image: 
+  background-image:
     radial-gradient(circle at 50% 0%, #1a1a2e 0%, transparent 70%),
     radial-gradient(circle at 80% 80%, #16213e 0%, transparent 50%);
 }
@@ -45,9 +45,11 @@ button {
   cursor: pointer;
   transition: border-color 0.25s;
 }
+
 button:hover {
   border-color: #646cff;
 }
+
 button:focus,
 button:focus-visible {
   outline: 4px auto -webkit-focus-ring-color;
@@ -59,4 +61,22 @@ button:focus-visible {
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 16px;
   box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+}
+
+/* Pulsating animation for AI speaking / recording */
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+
+  50% {
+    transform: scale(1.05);
+    opacity: 0.9;
+  }
+
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
 }

@@ -38,6 +38,12 @@ io.on('connection', (socket) => {
     gemini.sendAudioInput(Buffer.from(data));
   });
 
+  // Handle Text Input from Client
+  socket.on('text-input', (textMessage) => {
+    console.log('📝 Text message received:', textMessage);
+    gemini.sendTextInput(textMessage);
+  });
+
   // Handle Manual Benchmark (Legacy simulator)
   socket.on('request-benchmark', (type) => {
     // We can keep this for testing visual-only if needed, or remove.

@@ -39,18 +39,10 @@ const useAudioStream = (socket) => {
 
                 const inputData = e.inputBuffer.getChannelData(0);
 
-                // Debug: Check volume
-                let sum = 0;
-                for (let i = 0; i < inputData.length; i++) sum += inputData[i] * inputData[i];
-                const rms = Math.sqrt(sum / inputData.length);
-                if (rms > 0.01) {
-                    console.log("✓ Mic Input: Voice Detected (RMS:", rms.toFixed(4), ")");
-                }
-
                 // Convert Float32 to Int16 PCM
                 const pcmData = floatTo16BitPCM(inputData);
 
-                console.log('Emitting audio-input, socket connected:', socket.connected, 'size:', pcmData.byteLength);
+                // Emit audio without verbose logging (was slowing down)
                 socket.emit('audio-input', pcmData);
             };
 

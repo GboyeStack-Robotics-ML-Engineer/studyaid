@@ -1,4 +1,5 @@
 server/node_modules
 server/venv
 server/.env
+server/service-account.json
 client/node_modules

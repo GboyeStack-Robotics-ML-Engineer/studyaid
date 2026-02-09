@@ -6,7 +6,7 @@ import 'katex/dist/katex.min.css';
 const parseFunction = (expression) => {
     // Clean up the expression
     let expr = expression.replace(/\s/g, '').toLowerCase();
-    
+
     // Convert common patterns to JavaScript-compatible format
     expr = expr
         .replace(/x\^(\d+)/g, 'Math.pow(x, $1)')  // x^2 -> Math.pow(x, 2)
@@ -19,7 +19,7 @@ const parseFunction = (expression) => {
         .replace(/log\(/g, 'Math.log10(')
         .replace(/sqrt\(/g, 'Math.sqrt(')
         .replace(/abs\(/g, 'Math.abs(');
-    
+
     return (x) => {
         try {
             // Use Function constructor for safe evaluation
@@ -40,6 +40,12 @@ const CanvasBoard = ({ socket, onDrawCommand }) => {
     const animationFrameRef = useRef(null);
     const textLayoutRef = useRef({ nextY: 100, elements: [] }); // Track text positions
 
+    // Pagination State
+    const [slides, setSlides] = useState([]); // Array of arrays (each page has steps)
+    const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
+    const [isAnimating, setIsAnimating] = useState(false);
+    const [solutionTitle, setSolutionTitle] = useState("");
+
     // Function to draw a graph with optional animation (defined before drawCommand)
     const drawGraph = useCallback((cmd, ctx, canvas, overlay, animated = true) => {
         const width = canvas.width;
@@ -57,7 +63,7 @@ const CanvasBoard = ({ socket, onDrawCommand }) => {
         const xScale = graphWidth / (range.max - range.min);
         const yRange = 5;
         const yScale = graphHeight / (2 * yRange);
-        
+
         // Calculate origin position: x=0 should be at center, or at padding if range doesn't include 0
         let originX;
         if (range.min <= 0 && range.max >= 0) {
@@ -71,7 +77,7 @@ const CanvasBoard = ({ socket, onDrawCommand }) => {
 
         // Helper to draw axes and grid (uses variables from outer scope)
         const drawAxesAndGrid = () => {
-            
+
             // Draw grid
             ctx.strokeStyle = '#333';
             ctx.lineWidth = 1;
@@ -122,7 +128,7 @@ const CanvasBoard = ({ socket, onDrawCommand }) => {
         // Generate points with corrected positioning
         const points = [];
         const step = (range.max - range.min) / (graphWidth * 2);
-        
+
         for (let x = range.min; x <= range.max; x += step) {
             try {
                 const y = func(x);
@@ -161,7 +167,7 @@ const CanvasBoard = ({ socket, onDrawCommand }) => {
                     ctx.lineWidth = 3;
                     ctx.beginPath();
                     ctx.moveTo(points[0].x, points[0].y);
-                    
+
                     for (let i = 1; i < currentIndex; i++) {
                         ctx.lineTo(points[i].x, points[i].y);
                     }
@@ -182,7 +188,7 @@ const CanvasBoard = ({ socket, onDrawCommand }) => {
             ctx.lineWidth = 3;
             ctx.beginPath();
             ctx.moveTo(points[0].x, points[0].y);
-            
+
             for (let i = 1; i < points.length; i++) {
                 ctx.lineTo(points[i].x, points[i].y);
             }
@@ -202,7 +208,7 @@ const CanvasBoard = ({ socket, onDrawCommand }) => {
             labelDiv.style.transition = animated ? 'opacity 0.5s ease-in 0.5s' : 'none';
             labelDiv.textContent = `f(x) = ${cmd.function}`;
             overlay.appendChild(labelDiv);
-            
+
             if (animated) {
                 requestAnimationFrame(() => {
                     labelDiv.style.opacity = '1';
@@ -210,6 +216,56 @@ const CanvasBoard = ({ socket, onDrawCommand }) => {
             }
         }
     }, []);
+
+    // Helper to render mixed Text and LaTeX into a DOM node
+    const renderMathText = (node, content) => {
+        const parts = content.split(/(\$\$[\s\S]*?\$\$|\$[\s\S]*?\$|\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\))/g);
+
+        parts.forEach(part => {
+            if (!part) return;
+            const isMath = /^(\$\$|\$|\\\[|\\\()/.test(part);
+            if (isMath) {
+                try {
+                    let cleanMath = part
+                        .replace(/^\$\$(.*)\$\$$/s, '$1')
+                        .replace(/^\$(.*)\$$/s, '$1')
+                        .replace(/^\\\[(.*)\\\]$/s, '$1')
+                        .replace(/^\\\((.*)\\\)$/s, '$1');
+
+                    const span = document.createElement('span');
+                    const isDisplay = part.startsWith('$$') || part.startsWith('\\[');
+                    katex.render(cleanMath, span, { throwOnError: false, displayMode: isDisplay });
+                    node.appendChild(span);
+                } catch (e) {
+                    node.appendChild(document.createTextNode(part));
+                }
+            } else {
+                const span = document.createElement('span');
+                span.textContent = part;
+                node.appendChild(span);
+            }
+        });
+    };
+
+    // Helper to create DOM nodes for steps
+    const createStepNode = (content, color = '#fff', fontSize = '24px') => {
+        const node = document.createElement('div');
+        node.style.color = color;
+        node.style.fontSize = fontSize;
+        node.style.textAlign = 'center';
+        node.style.transition = 'opacity 0.8s ease-in, transform 0.5s ease-out';
+        node.style.background = 'rgba(0,0,0,0.6)';
+        node.style.padding = '15px 25px';
+        node.style.borderRadius = '12px';
+        node.style.width = 'fit-content';
+        node.style.maxWidth = '90%';
+        node.style.alignSelf = 'center';
+        node.style.marginBottom = '15px';
+        node.style.boxShadow = '0 4px 6px rgba(0,0,0,0.2)';
+
+        renderMathText(node, content);
+        return node;
+    };
 
     const drawCommand = useCallback((cmd) => {
         const canvas = canvasRef.current;
@@ -220,32 +276,90 @@ const CanvasBoard = ({ socket, onDrawCommand }) => {
         console.log('Drawing command:', cmd);
         setActiveCommand(cmd);
 
-        // Cancel any ongoing animation
         if (animationFrameRef.current) {
             cancelAnimationFrame(animationFrameRef.current);
             animationFrameRef.current = null;
         }
 
-        // ALWAYS clear both canvas and overlay for fresh start
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        if (overlay) overlay.innerHTML = '';
-        
-        // Reset text layout when clearing or starting new content
-        if (cmd.type === 'CLEAR' || cmd.clearLayout) {
-            textLayoutRef.current.nextY = 100;
-            textLayoutRef.current.elements = [];
-            if (cmd.type === 'CLEAR') {
-                return;
+        // Handle Animated Sequence with Pagination (Slides)
+        if (cmd.type === 'ANIMATE_SEQUENCE') {
+            const steps = cmd.steps || [];
+            const title = cmd.title || "Solution";
+            setSolutionTitle(title);
+
+            // Clear entire board
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            if (overlay) overlay.innerHTML = '';
+
+            // Reduced to 3 steps per page for better visibility without overlap
+            const STEPS_PER_PAGE = 3;
+            const newSlides = [];
+            for (let i = 0; i < steps.length; i += STEPS_PER_PAGE) {
+                const chunk = steps.slice(i, i + STEPS_PER_PAGE).map(s => ({ content: s, visible: false }));
+                newSlides.push(chunk);
             }
+            setSlides(newSlides);
+            setCurrentSlideIndex(0);
+            setIsAnimating(true);
+
+
+            // CRITICAL: Timing must match Gemini's speech pace
+            // Audio speaks at ~150-180 words/minute (conversational pace)
+            // That's roughly 3 words/second, or ~15-20 chars/second
+            // BUT we need buffer time for audio to actually reach that part of narration
+            let cumulativeDelay = 300; // Initial delay for audio to start
+
+            steps.forEach((stepContent, i) => {
+                const pageIndex = Math.floor(i / STEPS_PER_PAGE);
+                const stepIndexInPage = i % STEPS_PER_PAGE;
+
+                // Timing tuned to match speech pace
+                // Base: 400ms (transition time)
+                // + 25ms per character (matches speech + buffer)
+                // Example: 50-char step = 400ms + 1250ms = 1.65s
+                const readingTime = Math.max(400, stepContent.length * 25);
+
+                setTimeout(() => {
+                    // Switch page if needed
+                    if (stepIndexInPage === 0) {
+                        setCurrentSlideIndex(pageIndex);
+                    }
+
+                    // Mark step as visible
+                    setSlides(prevSlides => {
+                        const newSlidesState = prevSlides.map(slide => slide.map(s => ({ ...s })));
+                        if (newSlidesState[pageIndex] && newSlidesState[pageIndex][stepIndexInPage]) {
+                            newSlidesState[pageIndex][stepIndexInPage].visible = true;
+                        }
+                        return newSlidesState;
+                    });
+
+                }, cumulativeDelay);
+
+                cumulativeDelay += readingTime;
+            });
+
+
+
+            setTimeout(() => {
+                setIsAnimating(false);
+            }, cumulativeDelay + 1000);
+
+            return;
         }
 
-        // Handle graph drawing with animation
+        // For non-sequence commands:
         if (cmd.type === 'DRAW_GRAPH') {
+            // Reset pagination if user asks for a simple graph
+            setSlides([]);
+            setSolutionTitle("");
             drawGraph(cmd, ctx, canvas, overlay, cmd.animated !== false);
             return;
         }
 
         if (cmd.type === 'DRAW_SHAPE') {
+            setSlides([]);
+            setSolutionTitle("");
             ctx.strokeStyle = cmd.color || '#00D2FF';
             ctx.fillStyle = cmd.color || '#00D2FF';
             ctx.lineWidth = 4;
@@ -266,88 +380,126 @@ const CanvasBoard = ({ socket, onDrawCommand }) => {
                 ctx.closePath();
                 ctx.stroke();
             }
+            return;
         }
 
+        // Legacy/Generic Text
         if (cmd.type === 'DRAW_TEXT') {
+            setSlides([]);
+            setSolutionTitle("");
             const text = cmd.text || '';
-
-            // Enhanced LaTeX detection - be more permissive
-            const hasLatex = cmd.isLatex !== undefined ? cmd.isLatex : (
-                text.includes('\\') ||  // LaTeX commands
-                (text.includes('^') && /[a-zA-Z]/.test(text)) ||  // Exponents with variables
-                (text.includes('_') && /[a-zA-Z]/.test(text)) ||  // Subscripts
-                text.includes('=') && /[a-zA-Z]/.test(text) ||  // Equations with variables
-                /[a-zA-Z]\s*[=+\-*/]\s*[a-zA-Z0-9]/.test(text) ||  // Mathematical expressions
-                /\\frac|\\sqrt|\\sum|\\int|\\lim|\\sin|\\cos|\\tan|\\log|\\ln/.test(text) ||  // LaTeX functions
-                /[a-zA-Z]\^[0-9]|[a-zA-Z]_[0-9]/.test(text)  // Variables with superscript/subscript
-            );
-
-            // Calculate position for text (prevent overlap)
-            let textX, textY;
-            if (cmd.position && cmd.position[0] && cmd.position[1]) {
-                // Use provided position
-                textX = cmd.position[0];
-                textY = cmd.position[1];
-            } else {
-                // Auto-position: center horizontally, stack vertically
-                textX = canvas.width / 2;
-                textY = textLayoutRef.current.nextY;
-                // Update next position for next text element
-                textLayoutRef.current.nextY += 80; // Space between text elements
-                // Reset if we run out of space
-                if (textLayoutRef.current.nextY > canvas.height - 50) {
-                    textLayoutRef.current.nextY = 100;
-                }
-            }
-
-            if ((hasLatex || cmd.isLatex) && overlay) {
-                // Render as LaTeX using KaTeX with animation
-                try {
-                    const latexDiv = document.createElement('div');
-                    latexDiv.style.position = 'absolute';
-                    latexDiv.style.left = `${textX}px`;
-                    latexDiv.style.top = `${textY}px`;
-                    latexDiv.style.transform = 'translate(-50%, -50%)';
-                    latexDiv.style.color = cmd.color || '#fff';
-                    latexDiv.style.fontSize = '36px';
-                    latexDiv.style.padding = '15px 25px';
-                    latexDiv.style.background = 'rgba(0,0,0,0.5)';
-                    latexDiv.style.borderRadius = '10px';
-                    latexDiv.style.opacity = cmd.animated !== false ? '0' : '1';
-                    latexDiv.style.transition = cmd.animated !== false ? 'opacity 0.8s ease-in' : 'none';
-                    latexDiv.style.marginBottom = '20px'; // Add spacing
-
-                    katex.render(text, latexDiv, {
-                        throwOnError: false,
-                        displayMode: true
-                    });
-
-                    overlay.appendChild(latexDiv);
-
-                    // Animate fade-in
-                    if (cmd.animated !== false) {
-                        requestAnimationFrame(() => {
-                            latexDiv.style.opacity = '1';
-                        });
-                    }
-                } catch (e) {
-                    console.error('KaTeX render error:', e);
-                    // Fallback to canvas text
-                    ctx.fillStyle = cmd.color || '#fff';
-                    ctx.font = '24px Inter, sans-serif';
-                    ctx.textAlign = 'center';
-                    ctx.fillText(text, textX, textY);
-                }
-            } else {
-                // Regular text on canvas
-                ctx.fillStyle = cmd.color || '#fff';
-                ctx.font = '24px Inter, sans-serif';
-                ctx.textAlign = 'center';
-                ctx.fillText(text, textX, textY);
-            }
+            ctx.fillStyle = cmd.color || '#fff';
+            ctx.font = '24px Inter, sans-serif';
+            ctx.textAlign = 'center';
+            const x = (cmd.position && cmd.position[0]) || canvas.width / 2;
+            const y = (cmd.position && cmd.position[1]) || canvas.height / 2;
+            ctx.fillText(text, x, y);
         }
+
     }, [drawGraph]);
 
+    // Render Pagination Overlay with Fixed Footer
+    useEffect(() => {
+        if (slides.length === 0 || !overlayRef.current) return;
+
+        const overlay = overlayRef.current;
+        overlay.innerHTML = '';
+
+        // Main Flex Container
+        const container = document.createElement('div');
+        container.style.width = '100%';
+        container.style.height = '100%';
+        container.style.display = 'flex';
+        container.style.flexDirection = 'column';
+        container.style.justifyContent = 'space-between'; // Push footer down
+        container.style.padding = '30px';
+        container.style.boxSizing = 'border-box';
+        container.style.pointerEvents = 'auto'; // Enable clicks on this container
+
+        // Header
+        const header = document.createElement('div');
+        renderMathText(header, solutionTitle);
+        header.style.color = '#00D2FF';
+        header.style.fontSize = '26px';
+        header.style.fontWeight = 'bold';
+        header.style.marginBottom = '20px';
+        header.style.textAlign = 'center';
+        header.style.flexShrink = '0';
+        container.appendChild(header);
+
+        // Content Area (Flexible)
+        const contentArea = document.createElement('div');
+        contentArea.style.flex = '1'; // Take remaining space
+        contentArea.style.display = 'flex';
+        contentArea.style.flexDirection = 'column';
+        contentArea.style.gap = '20px';
+        contentArea.style.overflowY = 'auto'; // Scroll internal steps if they exceed space
+        contentArea.style.scrollbarWidth = 'none';
+        contentArea.style.alignItems = 'center';
+
+        const currentSteps = slides[currentSlideIndex] || [];
+
+        currentSteps.forEach((stepObj) => {
+            const node = createStepNode(stepObj.content, '#fff', '20px');
+            // Adjust margin for cleaner look
+            node.style.marginBottom = '10px';
+
+            if (!stepObj.visible) {
+                node.style.opacity = '0';
+                node.style.transform = 'translateY(10px)';
+            } else {
+                node.style.opacity = '1';
+                node.style.transform = 'translateY(0)';
+            }
+            contentArea.appendChild(node);
+        });
+
+        container.appendChild(contentArea);
+
+        // Footer (Controls)
+        if (slides.length > 1) {
+            const controls = document.createElement('div');
+            controls.style.display = 'flex';
+            controls.style.gap = '20px';
+            controls.style.justifyContent = 'center';
+            controls.style.alignItems = 'center';
+            controls.style.padding = '10px';
+            controls.style.marginTop = '10px';
+            controls.style.flexShrink = '0'; // Don't shrink buttons
+
+            const createBtn = (text, onClick, disabled) => {
+                const btn = document.createElement('button');
+                btn.textContent = text;
+                btn.onclick = onClick;
+                btn.disabled = disabled;
+                btn.style.padding = '8px 20px';
+                btn.style.background = disabled ? 'rgba(255,255,255,0.1)' : '#00D2FF';
+                btn.style.color = disabled ? '#555' : '#fff';
+                btn.style.border = 'none';
+                btn.style.borderRadius = '20px';
+                btn.style.cursor = disabled ? 'default' : 'pointer';
+                btn.style.fontWeight = 'bold';
+                btn.style.fontSize = '14px';
+                return btn;
+            };
+
+            const prevBtn = createBtn('← Back', () => setCurrentSlideIndex(Math.max(0, currentSlideIndex - 1)), currentSlideIndex === 0);
+            const nextBtn = createBtn('Next →', () => setCurrentSlideIndex(Math.min(slides.length - 1, currentSlideIndex + 1)), currentSlideIndex === slides.length - 1);
+
+            const indicator = document.createElement('span');
+            indicator.textContent = `${currentSlideIndex + 1} / ${slides.length}`;
+            indicator.style.color = '#888';
+            indicator.style.fontSize = '14px';
+
+            controls.appendChild(prevBtn);
+            controls.appendChild(indicator);
+            controls.appendChild(nextBtn);
+            container.appendChild(controls);
+        }
+
+        overlay.appendChild(container);
+
+    }, [slides, currentSlideIndex, solutionTitle]);
     // Expose drawCommand to parent component
     useEffect(() => {
         if (onDrawCommand) {
