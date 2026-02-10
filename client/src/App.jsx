@@ -4,7 +4,14 @@ import CanvasBoard from './components/CanvasBoard';
 import useAudioStream from './hooks/useAudioStream';
 import { Mic, MicOff, Play } from 'lucide-react';
 
-const socket = io(import.meta.env.VITE_SERVER_URL || 'http://localhost:3001');
+// Ensure we use the full URL with protocol
+const getServerUrl = () => {
+  const url = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
+  if (url.startsWith('http')) return url;
+  return `https://${url}`;
+};
+
+const socket = io(getServerUrl());
 
 function App() {
   const [isConnected, setIsConnected] = useState(false);
