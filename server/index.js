@@ -6,6 +6,11 @@ const cors = require('cors');
 const app = express();
 app.use(cors());
 
+// Health Check / Root Route
+app.get('/', (req, res) => {
+  res.send('StudyAid Server is Running 🚀');
+});
+
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
