@@ -18,8 +18,13 @@ class GeminiLiveBridge {
         this.credentialsPath = path.join(__dirname, '..', 'service-account.json');
 
         // Set GOOGLE_APPLICATION_CREDENTIALS environment variable
-        // This allows the SDK to use Application Default Credentials (ADC)
-        process.env.GOOGLE_APPLICATION_CREDENTIALS = this.credentialsPath;
+        // Only if not already set (allows Cloud platforms to inject their own path)
+        if (!process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+            this.credentialsPath = path.join(__dirname, '..', 'service-account.json');
+            process.env.GOOGLE_APPLICATION_CREDENTIALS = this.credentialsPath;
+        } else {
+            this.credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+        }
     }
 
     async connect() {
